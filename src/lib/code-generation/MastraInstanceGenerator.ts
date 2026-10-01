@@ -1,119 +1,65 @@
-import type { ProjectConfig, CanvasNode } from '../../types';
+import type { ProjectConfig } from '../../types';
+import { escapeString, toCamelCase } from './codeGenUtils';
 
-/**
- * Generates complete Mastra instance configuration
- */
+/** Current Mastra bootstrap shared by export and optional browser preview. */
 export class MastraInstanceGenerator {
-  /**
-   * Generate Mastra instance from project configuration
-   */
   generate(project: ProjectConfig): string {
-    const lines: string[] = [];
-
-    // Import Mastra
-    lines.push(`import { Mastra } from '@mastra/core';`);
-
-    // Import agents (only those with valid config)
-    const agentNodes = project.nodes.filter(n => {
-      const config = (n.data as any).config;
-      return n.type === 'agent' && config && config.id && config.name;
-    });
-    if (agentNodes.length > 0) {
-      // Deduplicate agent imports by ID
-      const uniqueAgentIds = [...new Set(agentNodes.map(node => (node.data as any).config.id))];
-      const agentImports = uniqueAgentIds.map(agentId => {
-        return this.toCamelCase(agentId) + 'Agent';
-      });
-      lines.push(`import { ${agentImports.join(', ')} } from './agents';`);
+    const lines = [`import { Mastra } from '@mastra/core/mastra';`];
+    const storage = project.settings.storage?.type ?? 'memory';
+    lines.push(
+      storage === 'libsql'
+        ? `import { LibSQLStore } from '@mastra/libsql';`
+        : `import { InMemoryStore } from '@mastra/core/storage';`,
+    );
+    const logger = project.settings.logger?.type ?? 'console';
+    lines.push(
+      logger === 'pino'
+        ? `import { PinoLogger } from '@mastra/loggers';`
+        : `import { ConsoleLogger } from '@mastra/core/logger';`,
+    );
+    const tracing =
+      project.settings.telemetry?.enabled || project.nodes.some((n) => (n.data.config as any)?.enableTracing);
+    if (tracing) lines.push(`import { Observability, MastraStorageExporter } from '@mastra/observability';`);
+    for (const type of ['agent', 'tool'] as const) {
+      const configs = project.nodes.filter((node) => node.type === type).map((node) => node.data.config as any);
+      if (configs.length)
+        lines.push(
+          `import { ${configs.map((config) => toCamelCase(config.id) + (type === 'agent' ? 'Agent' : 'Tool')).join(', ')} } from './${type}s';`,
+        );
     }
-
-    // Import workflows (if any workflow-like structures exist)
-    const workflowNodes = this.findWorkflows(project.nodes);
-    if (workflowNodes.length > 0) {
-      const workflowImports = workflowNodes.map(wf => {
-        return this.toCamelCase(wf.id) + 'Workflow';
-      });
-      lines.push(`import { ${workflowImports.join(', ')} } from './workflows';`);
+    lines.push('', 'export const mastra = new Mastra({');
+    for (const type of ['agent', 'tool'] as const) {
+      const configs = project.nodes.filter((node) => node.type === type).map((node) => node.data.config as any);
+      if (configs.length) {
+        lines.push(`  ${type}s: {`);
+        configs.forEach((config) =>
+          lines.push(
+            `    '${escapeString(config.id)}': ${toCamelCase(config.id)}${type === 'agent' ? 'Agent' : 'Tool'},`,
+          ),
+        );
+        lines.push('  },');
+      }
     }
-
-    // Import tools (only those with valid config)
-    const toolNodes = project.nodes.filter(n => {
-      const config = (n.data as any).config;
-      return n.type === 'tool' && config && config.id && config.description;
-    });
-    if (toolNodes.length > 0) {
-      // Deduplicate tool imports by ID
-      const uniqueToolIds = [...new Set(toolNodes.map(node => (node.data as any).config.id))];
-      const toolImports = uniqueToolIds.map(toolId => {
-        return this.toCamelCase(toolId) + 'Tool';
-      });
-      lines.push(`import { ${toolImports.join(', ')} } from './tools';`);
+    if (storage === 'libsql') {
+      const url = project.settings.storage?.config?.url ?? 'file:./mastra.db';
+      lines.push(`  storage: new LibSQLStore({ id: 'mastra-storage', url: ${JSON.stringify(url)} }),`);
+    } else {
+      lines.push(`  storage: new InMemoryStore(),`);
     }
-
-    lines.push(``);
-
-    // Create Mastra instance
-    lines.push(`export const mastra = new Mastra({`);
-
-    // Add agents (already filtered above, deduplicate by ID)
-    if (agentNodes.length > 0) {
-      const uniqueAgentIds = [...new Set(agentNodes.map(node => (node.data as any).config.id))];
-      lines.push(`  agents: {`);
-      uniqueAgentIds.forEach(agentId => {
-        const varName = this.toCamelCase(agentId) + 'Agent';
-        lines.push(`    '${agentId}': ${varName},`);
-      });
-      lines.push(`  },`);
+    lines.push(
+      `  logger: new ${logger === 'pino' ? 'PinoLogger' : 'ConsoleLogger'}(${JSON.stringify({ name: project.name, ...project.settings.logger?.config })}),`,
+    );
+    if (tracing) {
+      lines.push(
+        '  // Trace locally to the selected storage; no hosted exporter is configured.',
+        '  observability: new Observability({',
+        '    configs: {',
+        `      default: { serviceName: ${JSON.stringify(project.name)}, exporters: [new MastraStorageExporter()] },`,
+        '    },',
+        '  }),',
+      );
     }
-
-    // Add workflows
-    if (workflowNodes.length > 0) {
-      lines.push(`  workflows: {`);
-      workflowNodes.forEach(wf => {
-        const varName = this.toCamelCase(wf.id) + 'Workflow';
-        lines.push(`    ${wf.id}: ${varName},`);
-      });
-      lines.push(`  },`);
-    }
-
-    // Add tools (already filtered above, deduplicate by ID)
-    if (toolNodes.length > 0) {
-      const uniqueToolIds = [...new Set(toolNodes.map(node => (node.data as any).config.id))];
-      lines.push(`  tools: {`);
-      uniqueToolIds.forEach(toolId => {
-        const varName = this.toCamelCase(toolId) + 'Tool';
-        lines.push(`    '${toolId}': ${varName},`);
-      });
-      lines.push(`  },`);
-    }
-
-    // Skip storage and logger configuration for WebContainer preview
-    // These require additional setup and dependencies that may not be available
-    
-    // Add telemetry (disabled in WebContainer to avoid network errors)
-    lines.push(`  telemetry: {`);
-    lines.push(`    enabled: false,`);
-    lines.push(`  },`);
-
-    lines.push(`});`);
-
+    lines.push('});');
     return lines.join('\n');
-  }
-
-  /**
-   * Find workflow structures from nodes
-   * (Groups of connected steps, loops, etc.)
-   */
-  private findWorkflows(_nodes: CanvasNode[]): { id: string; name: string }[] {
-    // For now, return empty array - workflows will be generated separately
-    // In future, analyze connected step nodes to identify workflows
-    return [];
-  }
-
-  /**
-   * Convert kebab-case to camelCase
-   */
-  private toCamelCase(str: string): string {
-    return str.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
   }
 }

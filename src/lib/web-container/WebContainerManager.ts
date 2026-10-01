@@ -137,7 +137,7 @@ export class WebContainerManager {
       });
 
       // Start dev process
-      this.devProcess = await container.spawn('npm', ['run', 'dev']);
+      this.devProcess = await container.spawn('npm', ['run', 'dev'], { env: { MASTRA_TELEMETRY_DISABLED: '1' } });
 
       // Stream output
       this.devProcess.output.pipeTo(

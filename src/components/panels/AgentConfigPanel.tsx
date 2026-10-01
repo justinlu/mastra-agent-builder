@@ -12,7 +12,7 @@ interface AgentConfigPanelProps {
 export function AgentConfigPanel({ nodeId }: AgentConfigPanelProps) {
   const { project, updateNode } = useBuilderState();
 
-  const node = project?.nodes.find(n => n.id === nodeId);
+  const node = project?.nodes.find((n) => n.id === nodeId);
   const config = (node?.data as any)?.config as AgentBuilderConfig | undefined;
 
   const [formData, setFormData] = useState<AgentBuilderConfig>({
@@ -82,7 +82,7 @@ export function AgentConfigPanel({ nodeId }: AgentConfigPanelProps) {
           <input
             type="text"
             value={formData.name}
-            onChange={e => {
+            onChange={(e) => {
               const name = e.target.value;
               const updated = { ...formData, name };
               // Auto-generate ID if current ID is empty or matches previous auto-generated pattern
@@ -91,7 +91,7 @@ export function AgentConfigPanel({ nodeId }: AgentConfigPanelProps) {
               }
               setFormData(updated);
             }}
-            onBlur={e => {
+            onBlur={(e) => {
               const name = e.target.value;
               const updated = { ...formData, name };
               // Auto-generate ID if current ID is empty or matches previous auto-generated pattern
@@ -120,7 +120,7 @@ export function AgentConfigPanel({ nodeId }: AgentConfigPanelProps) {
           <input
             type="text"
             value={formData.id}
-            onChange={e => handleChange('id', e.target.value)}
+            onChange={(e) => handleChange('id', e.target.value)}
             placeholder="e.g., customer-service-agent"
             className="w-full px-3 py-2 border border-border rounded-md bg-input text-sm focus:outline-none focus:ring-2 focus:ring-primary font-mono"
           />
@@ -131,8 +131,8 @@ export function AgentConfigPanel({ nodeId }: AgentConfigPanelProps) {
           <label className="block text-sm font-medium mb-1.5">Description</label>
           <textarea
             value={formData.description || ''}
-            onChange={e => updateLocalState('description', e.target.value)}
-            onBlur={e => handleChange('description', e.target.value)}
+            onChange={(e) => updateLocalState('description', e.target.value)}
+            onBlur={(e) => handleChange('description', e.target.value)}
             placeholder="What does this agent do?"
             rows={2}
             className="w-full px-3 py-2 border border-border rounded-md bg-input text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none text-foreground placeholder:text-muted-foreground"
@@ -147,8 +147,9 @@ export function AgentConfigPanel({ nodeId }: AgentConfigPanelProps) {
         <div>
           <label className="block text-sm font-medium mb-1.5">Provider</label>
           <select
+            aria-label="Provider"
             value={formData.model.provider}
-            onChange={e => handleModelChange('provider', e.target.value)}
+            onChange={(e) => handleModelChange('provider', e.target.value)}
             className="w-full px-3 py-2 border border-border rounded-md bg-input text-sm focus:outline-none focus:ring-2 focus:ring-primary text-foreground placeholder:text-muted-foreground"
           >
             <option value="openai">OpenAI</option>
@@ -161,45 +162,17 @@ export function AgentConfigPanel({ nodeId }: AgentConfigPanelProps) {
 
         <div>
           <label className="block text-sm font-medium mb-1.5">Model Name</label>
-          <select
+          <input
+            aria-label="Model Name"
+            type="text"
             value={formData.model.name}
-            onChange={e => handleModelChange('name', e.target.value)}
+            onChange={(e) => handleModelChange('name', e.target.value)}
+            placeholder="Enter the provider's exact model ID"
             className="w-full px-3 py-2 border border-border rounded-md bg-input text-sm focus:outline-none focus:ring-2 focus:ring-primary text-foreground placeholder:text-muted-foreground"
-          >
-            {formData.model.provider === 'openai' && (
-              <>
-                <option value="gpt-4">GPT-4</option>
-                <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-              </>
-            )}
-            {formData.model.provider === 'anthropic' && (
-              <>
-                <option value="claude-3-opus">Claude 3 Opus</option>
-                <option value="claude-3-sonnet">Claude 3 Sonnet</option>
-                <option value="claude-3-haiku">Claude 3 Haiku</option>
-              </>
-            )}
-            {formData.model.provider === 'google' && (
-              <>
-                <option value="gemini-pro">Gemini Pro</option>
-                <option value="gemini-pro-vision">Gemini Pro Vision</option>
-              </>
-            )}
-            {formData.model.provider === 'mistral' && (
-              <>
-                <option value="mistral-large">Mistral Large</option>
-                <option value="mistral-medium">Mistral Medium</option>
-                <option value="mistral-small">Mistral Small</option>
-              </>
-            )}
-            {formData.model.provider === 'groq' && (
-              <>
-                <option value="llama-3-70b">Llama 3 70B</option>
-                <option value="mixtral-8x7b">Mixtral 8x7B</option>
-              </>
-            )}
-          </select>
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Use a model available to your provider account. Existing IDs are preserved.
+          </p>
         </div>
       </div>
 
@@ -208,13 +181,13 @@ export function AgentConfigPanel({ nodeId }: AgentConfigPanelProps) {
         <h4 className="text-sm font-semibold">Instructions</h4>
 
         {/* Instruction Templates */}
-        <InstructionTemplates onSelect={instructions => handleChange('instructions', instructions)} />
+        <InstructionTemplates onSelect={(instructions) => handleChange('instructions', instructions)} />
 
         <div>
           <textarea
             value={formData.instructions}
-            onChange={e => updateLocalState('instructions', e.target.value)}
-            onBlur={e => handleChange('instructions', e.target.value)}
+            onChange={(e) => updateLocalState('instructions', e.target.value)}
+            onBlur={(e) => handleChange('instructions', e.target.value)}
             placeholder="Enter agent instructions (supports markdown)..."
             rows={8}
             className="w-full px-3 py-2 border border-border rounded-md bg-input text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none font-mono"
@@ -224,7 +197,7 @@ export function AgentConfigPanel({ nodeId }: AgentConfigPanelProps) {
       </div>
 
       {/* Model Settings */}
-      <ModelSettings model={formData.model} onChange={model => handleChange('model', model)} />
+      <ModelSettings model={formData.model} onChange={(model) => handleChange('model', model)} />
 
       {/* Tools Attachment */}
       <div className="space-y-4">
@@ -338,7 +311,12 @@ export function AgentConfigPanel({ nodeId }: AgentConfigPanelProps) {
           <label className="block text-sm font-medium mb-1.5">Memory Type</label>
           <select
             value={formData.memory?.type || 'none'}
-            onChange={e => handleChange('memory', { ...formData.memory, type: e.target.value as any })}
+            onChange={(e) =>
+              handleChange('memory', {
+                ...formData.memory,
+                type: e.target.value as any,
+              })
+            }
             className="w-full px-3 py-2 border border-border rounded-md bg-input text-sm focus:outline-none focus:ring-2 focus:ring-primary text-foreground placeholder:text-muted-foreground"
           >
             <option value="none">No Memory</option>
@@ -355,7 +333,12 @@ export function AgentConfigPanel({ nodeId }: AgentConfigPanelProps) {
               <input
                 type="number"
                 value={formData.memory?.maxMessages || 10}
-                onChange={e => handleChange('memory', { ...formData.memory, maxMessages: parseInt(e.target.value) })}
+                onChange={(e) =>
+                  handleChange('memory', {
+                    ...formData.memory,
+                    maxMessages: parseInt(e.target.value),
+                  })
+                }
                 min={1}
                 className="w-full px-3 py-2 border border-border rounded-md bg-input text-sm focus:outline-none focus:ring-2 focus:ring-primary text-foreground placeholder:text-muted-foreground"
               />
@@ -374,7 +357,7 @@ export function AgentConfigPanel({ nodeId }: AgentConfigPanelProps) {
           <input
             type="number"
             value={formData.maxRetries || 3}
-            onChange={e => handleChange('maxRetries', parseInt(e.target.value))}
+            onChange={(e) => handleChange('maxRetries', parseInt(e.target.value))}
             min={0}
             max={10}
             className="w-full px-3 py-2 border border-border rounded-md bg-input text-sm focus:outline-none focus:ring-2 focus:ring-primary text-foreground placeholder:text-muted-foreground"
@@ -387,7 +370,7 @@ export function AgentConfigPanel({ nodeId }: AgentConfigPanelProps) {
             type="checkbox"
             id="enable-tracing"
             checked={formData.enableTracing || false}
-            onChange={e => handleChange('enableTracing', e.target.checked)}
+            onChange={(e) => handleChange('enableTracing', e.target.checked)}
             className="w-4 h-4 border border-border rounded bg-input focus:ring-2 focus:ring-primary checked:bg-primary checked:text-primary-foreground"
           />
           <label htmlFor="enable-tracing" className="text-sm cursor-pointer">

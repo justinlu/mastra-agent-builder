@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { FileDown, FolderDown, Copy, Check } from 'lucide-react';
 import JSZip from 'jszip';
 import { showToast } from '../ui';
@@ -12,16 +12,27 @@ interface ExportDialogProps {
 
 export function ExportDialog({ files, projectName = 'mastra-project', onClose, onExportReady }: ExportDialogProps) {
   const [exportFormat, setExportFormat] = useState<'zip' | 'folder' | 'clipboard'>('zip');
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set(files.map(f => f.path)));
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set(files.map((f) => f.path)));
   const [isExporting, setIsExporting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    },
+    [files],
+  );
+
+  useEffect(() => {
+    setSelectedFiles(new Set(files.map((file) => file.path)));
+  }, [files]);
 
   // Notify parent component about export state
   useEffect(() => {
     if (onExportReady) {
       onExportReady(handleExport, isExporting, selectedFiles.size > 0);
     }
-  }, [onExportReady, isExporting, selectedFiles.size]);
+  }, [onExportReady, isExporting, selectedFiles, exportFormat, files]);
 
   const toggleFile = (path: string) => {
     const newSelection = new Set(selectedFiles);
@@ -34,7 +45,7 @@ export function ExportDialog({ files, projectName = 'mastra-project', onClose, o
   };
 
   const selectAll = () => {
-    setSelectedFiles(new Set(files.map(f => f.path)));
+    setSelectedFiles(new Set(files.map((f) => f.path)));
   };
 
   const deselectAll = () => {
@@ -48,8 +59,8 @@ export function ExportDialog({ files, projectName = 'mastra-project', onClose, o
 
       // Add selected files to zip
       files
-        .filter(f => selectedFiles.has(f.path))
-        .forEach(file => {
+        .filter((f) => selectedFiles.has(f.path))
+        .forEach((file) => {
           zip.file(file.path, file.content);
         });
 
@@ -84,17 +95,14 @@ export function ExportDialog({ files, projectName = 'mastra-project', onClose, o
         const dirHandle = await window.showDirectoryPicker();
 
         // Write selected files
-        for (const file of files.filter(f => selectedFiles.has(f.path))) {
+        for (const file of files.filter((f) => selectedFiles.has(f.path))) {
           const pathParts = file.path.split('/');
           let currentDir = dirHandle;
 
           // Create nested directories
           for (let i = 0; i < pathParts.length - 1; i++) {
-            try {
-              currentDir = await currentDir.getDirectoryHandle(pathParts[i], { create: true });
-            } catch (e) {
-              console.error('Error creating directory:', e);
-            }
+            // Fail the export instead of writing into the wrong parent directory.
+            currentDir = await currentDir.getDirectoryHandle(pathParts[i], { create: true });
           }
 
           // Write file
@@ -126,8 +134,8 @@ export function ExportDialog({ files, projectName = 'mastra-project', onClose, o
     setIsExporting(true);
     try {
       const selectedContent = files
-        .filter(f => selectedFiles.has(f.path))
-        .map(f => {
+        .filter((f) => selectedFiles.has(f.path))
+        .map((f) => {
           return `// ========================================\n// File: ${f.path}\n// ========================================\n\n${f.content}\n`;
         })
         .join('\n\n');
@@ -135,7 +143,8 @@ export function ExportDialog({ files, projectName = 'mastra-project', onClose, o
       await navigator.clipboard.writeText(selectedContent);
       setCopied(true);
       showToast('success', 'Code copied to clipboard!');
-      setTimeout(() => {
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => {
         setCopied(false);
         onClose?.();
       }, 2000);
@@ -223,7 +232,7 @@ export function ExportDialog({ files, projectName = 'mastra-project', onClose, o
         </div>
 
         <div className="border border-border rounded-lg h-64 overflow-y-auto">
-          {files.map(file => (
+          {files.map((file) => (
             <label
               key={file.path}
               className="flex items-center gap-3 p-3 hover:bg-secondary/50 cursor-pointer border-b border-border last:border-b-0"
