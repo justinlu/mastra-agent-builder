@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { validateProjectCompatibility } from '../../lib/code-generation';
 import { AlertCircle, AlertTriangle, Info, CheckCircle2, X } from 'lucide-react';
 import { useBuilderState } from '../../hooks';
 import { validateAllNodes, validateWorkflowGraph, type ValidationError } from '../../lib/validators';
@@ -17,7 +18,7 @@ export function ValidationPanel({ onClose }: ValidationPanelProps) {
     const nodeErrors = validateAllNodes(project.nodes);
     const graphErrors = validateWorkflowGraph(project.nodes, project.edges);
 
-    return [...nodeErrors, ...graphErrors];
+    return [...nodeErrors, ...graphErrors, ...validateProjectCompatibility(project)];
   }, [project]);
 
   // Group errors by severity

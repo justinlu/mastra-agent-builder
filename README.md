@@ -1,11 +1,63 @@
 # Mastra Visual Builder
 
-A powerful visual interface for building AI agents, workflows, and tools without writing code. The Visual Builder provides a drag-and-drop canvas where you can design complete Mastra applications and export production-ready TypeScript code.
+## Current Mastra compatibility (October 2026)
+
+This fork repairs the existing builder/export path against **@mastra/core 1.73.0** and **mastra CLI 1.32.0**. It does not complete the upstream workflow builder or add platform features. The legacy feature list below describes the original UI; the executable scope in this section takes precedence.
+
+### Verified executable scope
+
+- Agents with explicit IDs, provider/model IDs, instructions, attached tools, retry settings and shared generation/stream defaults
+- Model settings are preserved, including zero values; legacy `maxTokens` maps to current `maxOutputTokens`
+- Tools and standalone workflow steps with current imports/callback contracts and shared Zod 4 schema generation, including nested objects/arrays
+- Buffer memory maps to a real `Memory` instance with message history (`lastMessages`). Project storage supports in-memory and local LibSQL; logs support Console/Pino
+- Legacy enabled telemetry/tracing maps explicitly to **local storage tracing**, without a hosted exporter
+- Code view, ZIP/folder export and browser preview use one project assembler with pinned dependencies, `src/mastra` layout, barrel files, CLI scripts, tsconfig and `.env.example`
+- Existing model IDs are preserved in an editable field. The runtime checks provider account access/model availability when called; no provider catalog or paid API is queried by the editor
+
+### Explicit limits and migration
+
+Workflow/control-flow compilation was unfinished upstream. Connections, loops, branches, parallel groups and workflow attachments cannot be exported as if they run. Unsupported configurations now produce actionable errors without removing them from your saved project. Standalone steps remain exportable, but you must compose them into a workflow in code. A line between an agent and tool only represents a tool already explicitly attached in the agent's Tools configuration.
+
+Summary/token/vector/custom memory, delegation references, model fallback chains, custom processors/scorers/voice, custom callback defaults, remote/custom storage and hosted observability exporters require manual implementation. They are not silently discarded. PostgreSQL/Redis and custom logger options remain unimplemented. Schema type/default mismatches, invalid rules, duplicate/reserved resource IDs and missing attachments are rejected before export.
+
+Tool execute functions receive `(inputData, context)`; steps receive `{ inputData, ...context }`. Arbitrary existing execute bodies are never rewritten heuristically. Legacy `({ context })` tools or `({ input })` steps need explicit migration. The editor accepts JavaScript functions, writes them into TypeScript modules, and preserves comments/URLs/template strings. Its basic code checks are **not a sandbox**: exported custom code runs with your Node process permissions. Run the generated project's type check before execution.
+
+### Run and verify
+
+Requires **Node.js >=22.13.0** and the pinned pnpm version in package.json:
+
+```sh
+pnpm install
+pnpm dev
+pnpm lint
+pnpm test
+pnpm build
+pnpm check:generated
+```
+
+`check:generated` installs the actual generated artifact in ignored `.generated-test/`, type-checks it against the pinned packages, executes deterministic tool/step and LibSQL memory checks, exercises real Agent.generate/stream loops with Mastra's mock provider, builds with Mastra CLI, and starts the built server to check `/api/agents`. It removes inherited provider credentials from subprocesses and makes **no paid/external model calls**. Package installation needs npm registry access. CI runs these checks without secrets. Tests cover blocked export recovery and repeated export format/file changes.
+
+Mastra CLI analytics is separate from application tracing. Tests and browser preview set the supported `MASTRA_TELEMETRY_DISABLED=1` opt-out **before CLI startup**. When running exported code, set the same process environment variable (e.g. `MASTRA_TELEMETRY_DISABLED=1 npm run dev` on POSIX shells). `.env.example` includes the setting too. Real provider keys and project environment-variable values are never included in downloadable artifacts; fill them in locally.
+
+### Optional browser preview
+
+The native Node export/build/server path is verified. WebContainer runtime is **not verified** by the Node checks. Browser preview requires compatible browser isolation and a sufficiently recent WebContainer Node runtime. Local LibSQL's native dependencies are not verified in WebContainers, so choose in-memory storage explicitly for browser preview or run the unchanged LibSQL export on Node. The existing preview credentials dialog handles only OpenAI, Anthropic and Google; other providers remain available through Node export. The preview gate reports these limits before requesting keys.
+
+WebContainer API has separate StackBlitz commercial-use licensing requirements; the MIT license here does not grant rights to that service. See [WebContainer API terms](https://webcontainers.io/enterprise).
+
+Original MIT attribution and upstream history are retained.
+
+---
+
+
+## Original editor overview
+
+The original editor provides a drag-and-drop canvas for configuring agents, tools and workflow-shaped designs. The repaired executable export supports the subset documented above; the presence of a canvas node does not imply its execution is implemented.
 
 ## 🚀 Features
 
 - **Visual Canvas** - Drag-and-drop interface with 11 Mastra node types
-- **Code Generation** - Export production-ready TypeScript code
+- **Code Generation** - Export TypeScript projects for the verified compatible subset
 - **Template Library** - 7+ pre-built templates to get started quickly
 - **Real-time Validation** - Catch errors before export
 - **Project Management** - Save, load, import, and export projects
@@ -18,8 +70,8 @@ A powerful visual interface for building AI agents, workflows, and tools without
 ## 📦 Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/mastra-ai/mastra-agent-builder.git
+# Clone the compatibility branch (under review; not automatically merged)
+git clone --branch fix/mastra-current-compat https://github.com/justinlu/mastra-agent-builder.git
 cd mastra-agent-builder
 
 # Install dependencies

@@ -18,6 +18,7 @@ import { WebContainerManager, FileSystemGenerator } from '../lib/web-container';
 import type { ProjectConfig, ApiKeysConfig } from '../types';
 import type { Template } from '../lib/templates';
 import { X } from 'lucide-react';
+import { validateProjectCompatibility, validatePreviewCompatibility } from '../lib/code-generation';
 
 export function BuilderPage() {
   const {
@@ -115,7 +116,13 @@ export function BuilderPage() {
       return;
     }
     
-    // Show API keys dialog
+    const errors = validatePreviewCompatibility(project).filter(issue => issue.severity === 'error');
+    if (errors.length) {
+      showToast('error', errors[0].message);
+      addPreviewLog(errors.map(issue => issue.message).join('\n'));
+      return;
+    }
+    // Show API keys dialog only after validating the project.
     setShowApiKeysDialog(true);
   };
 
@@ -142,15 +149,15 @@ export function BuilderPage() {
         setPreviewStatus(status);
       };
       
-      // Boot WebContainer
-      setPreviewStatus('booting');
-      await manager.boot(onLog);
-      
+      // Validate and generate before booting or installing anything.
       // Generate files
       onLog('Generating project files...', 'info');
       const fileGenerator = new FileSystemGenerator();
       const files = fileGenerator.generateWebContainerFiles(project, apiKeys);
-      
+      validateProjectCompatibility(project).filter(issue => issue.severity !== 'error').forEach(issue => onLog(issue.message, 'warning'));
+      setPreviewStatus('booting');
+      await manager.boot(onLog);
+
       // Mount files
       await manager.mountProject(files, onLog);
       

@@ -1,14 +1,9 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Code, Copy, Download, Check, FileCode, Package, ChevronDown } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useBuilderState } from '../../hooks';
-import {
-  AgentCodeGenerator,
-  ToolCodeGenerator,
-  StepCodeGenerator,
-  MastraInstanceGenerator,
-} from '../../lib/code-generation';
+import { generateProjectFiles } from '../../lib/code-generation';
 import { ExportDialog } from '../export';
 import { FileExplorer } from './FileExplorer';
 
@@ -47,13 +42,18 @@ function getLanguageFromFile(filePath: string): string {
 
 export function CodePreview() {
   const { project } = useBuilderState();
-  const [selectedFile, setSelectedFile] = useState<string>('index.ts');
+  const [selectedFile, setSelectedFile] = useState<string>('src/mastra/index.ts');
   const [copied, setCopied] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportHandler, setExportHandler] = useState<(() => void) | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [canExport, setCanExport] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const onExportReady = useCallback((handler: () => void, exporting: boolean, canExportFiles: boolean) => {
+    setExportHandler(() => handler);
+    setIsExporting(exporting);
+    setCanExport(canExportFiles);
+  }, []);
 
   // Handle click outside to close dropdown
   useEffect(() => {
@@ -71,108 +71,20 @@ export function CodePreview() {
     return undefined;
   }, [showExportDialog]);
 
-  // Generate all code files
-  const codeFiles = useMemo<CodeFile[]>(() => {
-    if (!project) return [];
-
-    const files: CodeFile[] = [];
-    const skippedNodes: string[] = [];
-
-    // Generate agent files
-    const agentNodes = project.nodes.filter(n => n.type === 'agent');
-    agentNodes.forEach(node => {
-      const config = (node.data as any).config;
-      if (config && config.id && config.name) {
-        const generator = new AgentCodeGenerator();
-        const code = generator.generate(config);
-        files.push({
-          path: `agents/${config.id}.ts`,
-          content: code,
-        });
-      } else {
-        skippedNodes.push(`Agent node (missing: ${!config?.id ? 'id' : 'name'})`);
-      }
-    });
-
-    // Generate tool files
-    const toolNodes = project.nodes.filter(n => n.type === 'tool');
-    toolNodes.forEach(node => {
-      const config = (node.data as any).config;
-      if (config && config.id && config.description) {
-        const generator = new ToolCodeGenerator();
-        const code = generator.generate(config);
-        files.push({
-          path: `tools/${config.id}.ts`,
-          content: code,
-        });
-      } else {
-        skippedNodes.push(`Tool node (missing: ${!config?.id ? 'id' : 'description'})`);
-      }
-    });
-
-    // Generate step files
-    const stepNodes = project.nodes.filter(n => n.type === 'step');
-    stepNodes.forEach(node => {
-      const config = (node.data as any).config;
-      if (config && config.id && config.id.trim() !== '') {
-        const generator = new StepCodeGenerator();
-        const code = generator.generate(config);
-        files.push({
-          path: `steps/${config.id}.ts`,
-          content: code,
-        });
-      } else {
-        skippedNodes.push(`Step node (missing: id)`);
-      }
-    });
-
-    // Generate mastra instance
-    const instanceGenerator = new MastraInstanceGenerator();
-    const instanceCode = instanceGenerator.generate(project);
-    files.push({
-      path: 'index.ts',
-      content: instanceCode,
-    });
-
-    // Add info about skipped nodes if any
-    if (skippedNodes.length > 0) {
-      files.push({
-        path: '_NOTES.md',
-        content: `# Code Generation Notes
-
-## Skipped Nodes
-
-The following nodes were not included in the generated code because they are missing required configuration:
-
-${skippedNodes.map((msg, i) => `${i + 1}. ${msg}`).join('\n')}
-
-**To include these nodes:**
-1. Select each node on the canvas
-2. Configure the required fields in the right panel
-3. The code will update automatically
-
----
-_This file is for informational purposes only and should not be included in your final project._
-`,
-      });
+  const generation = useMemo(() => {
+    if (!project) return { files: [] as CodeFile[], error: '' };
+    try {
+      return { files: generateProjectFiles(project), error: '' };
+    } catch (error) {
+      return {
+        files: [] as CodeFile[],
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
-
-    // Generate package.json
-    files.push({
-      path: 'package.json',
-      content: generatePackageJson(project),
-    });
-
-    // Generate README.md
-    files.push({
-      path: 'README.md',
-      content: generateReadme(project),
-    });
-
-    return files;
   }, [project]);
+  const codeFiles = generation.files;
 
-  const currentFile = codeFiles.find(f => f.path === selectedFile);
+  const currentFile = codeFiles.find((f) => f.path === selectedFile);
 
   const handleCopy = async () => {
     if (currentFile) {
@@ -202,6 +114,16 @@ _This file is for informational purposes only and should not be included in your
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground">
         <p>No project loaded</p>
+      </div>
+    );
+  }
+
+  if (generation.error) {
+    return (
+      <div className="p-6 overflow-auto" role="alert">
+        <h2 className="font-semibold mb-3">Fix configuration before export</h2>
+        <p className="text-sm mb-3">Your project is preserved. These settings cannot be faithfully generated:</p>
+        <pre className="whitespace-pre-wrap text-sm">{generation.error}</pre>
       </div>
     );
   }
@@ -289,11 +211,7 @@ _This file is for informational purposes only and should not be included in your
                     files={codeFiles}
                     projectName={project?.settings?.projectName || 'mastra-project'}
                     onClose={() => setShowExportDialog(false)}
-                    onExportReady={(handler, exporting, canExportFiles) => {
-                      setExportHandler(() => handler);
-                      setIsExporting(exporting);
-                      setCanExport(canExportFiles);
-                    }}
+                    onExportReady={onExportReady}
                   />
                 </div>
               </div>
@@ -364,95 +282,4 @@ _This file is for informational purposes only and should not be included in your
       </div>
     </div>
   );
-}
-
-/**
- * Generate package.json content
- */
-function generatePackageJson(project: any): string {
-  return JSON.stringify(
-    {
-      name: project.settings?.projectName?.toLowerCase().replace(/\s+/g, '-') || 'mastra-project',
-      version: '1.0.0',
-      description: project.settings?.description || 'Generated by Mastra Visual Builder',
-      main: 'index.ts',
-      scripts: {
-        dev: 'tsx watch index.ts',
-        build: 'tsc',
-        start: 'node dist/index.js',
-      },
-      dependencies: {
-        '@mastra/core': '^0.1.0',
-        zod: '^3.22.0',
-      },
-      devDependencies: {
-        '@types/node': '^20.0.0',
-        typescript: '^5.0.0',
-        tsx: '^4.0.0',
-      },
-    },
-    null,
-    2,
-  );
-}
-
-/**
- * Generate README.md content
- */
-function generateReadme(project: any): string {
-  const projectName = project.settings?.projectName || 'Mastra Project';
-  const description = project.settings?.description || 'AI application built with Mastra';
-
-  return `# ${projectName}
-
-${description}
-
-## Generated by Mastra Visual Builder
-
-This project was generated from the Mastra Visual Builder.
-
-## Installation
-
-\`\`\`bash
-npm install
-\`\`\`
-
-## Development
-
-\`\`\`bash
-npm run dev
-\`\`\`
-
-## Build
-
-\`\`\`bash
-npm run build
-\`\`\`
-
-## Usage
-
-\`\`\`typescript
-import { mastra } from './index';
-
-// Use your agents
-const agent = mastra.getAgent('your-agent-id');
-const result = await agent.generate('Your prompt');
-
-// Use your workflows
-const workflow = mastra.getWorkflow('your-workflow-id');
-const workflowResult = await workflow.execute({ /* input */ });
-\`\`\`
-
-## Structure
-
-- \`agents/\` - Agent definitions
-- \`workflows/\` - Workflow definitions
-- \`tools/\` - Tool definitions
-- \`steps/\` - Workflow step definitions
-- \`index.ts\` - Main Mastra instance
-
-## Learn More
-
-- [Mastra Documentation](https://mastra.ai/docs)
-`;
 }

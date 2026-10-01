@@ -84,7 +84,7 @@ export function ToolConfigPanel({ nodeId }: ToolConfigPanelProps) {
             rows={12}
             className="w-full px-3 py-2 border border-border rounded-md bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none font-mono"
           />
-          <p className="text-xs text-muted-foreground mt-1">TypeScript/JavaScript code for this tool</p>
+          <p className="text-xs text-muted-foreground mt-1">JavaScript function receiving input directly, then execution context; exported as TypeScript</p>
         </div>
       </div>
 

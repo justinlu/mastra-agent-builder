@@ -6,7 +6,7 @@ Thank you for your interest in contributing to the Mastra Visual Builder! This d
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 22.13+
 - pnpm (recommended) or npm
 - Git
 
@@ -84,8 +84,9 @@ For new features:
 3. **Test your changes**
    ```bash
    pnpm test
-   pnpm test:coverage
+   pnpm lint
    pnpm build
+   pnpm check:generated
    ```
 
 4. **Commit your changes**

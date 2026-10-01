@@ -1,123 +1,65 @@
 import type { AgentBuilderConfig } from '../../types';
 import { escapeString, escapeBackticks, toCamelCase } from './codeGenUtils';
 
-/**
- * Generates Mastra agent code from visual configuration
- */
+/** Emits the current Mastra Agent API. Project validation rejects unmapped settings. */
 export class AgentCodeGenerator {
-  /**
-   * Generate Agent constructor from agent configuration
-   */
   generate(config: AgentBuilderConfig): string {
-    const lines: string[] = [];
-
-    // Import statements
-    lines.push(`import { Agent } from '@mastra/core';`);
-    
-    // Import model from appropriate SDK based on provider
-    const provider = config.model.provider.toLowerCase();
-    if (provider === 'openai') {
-      lines.push(`import { openai } from '@ai-sdk/openai';`);
-    } else if (provider === 'anthropic') {
-      lines.push(`import { anthropic } from '@ai-sdk/anthropic';`);
-    } else if (provider === 'google') {
-      lines.push(`import { google } from '@ai-sdk/google';`);
-    }
-
-    // Add tool imports if tools are attached
-    if (config.tools && config.tools.length > 0) {
-      const toolImports = config.tools.map(toolId => {
-        const varName = toCamelCase(toolId) + 'Tool';
-        return varName;
-      });
-      lines.push(`import { ${toolImports.join(', ')} } from '../tools';`);
-    }
-
-    // Add workflow imports if workflows are attached
-    if (config.workflows && config.workflows.length > 0) {
-      const workflowImports = config.workflows.map(wfId => {
-        const varName = toCamelCase(wfId) + 'Workflow';
-        return varName;
-      });
-      lines.push(`import { ${workflowImports.join(', ')} } from '../workflows';`);
-    }
-
-    lines.push(``);
-
-    // Generate agent
-    lines.push(`export const ${this.getAgentVarName(config.id)} = new Agent({`);
-    lines.push(`  name: '${escapeString(config.name)}',`);
-    lines.push(`  instructions: \``);
-    lines.push(escapeBackticks(config.instructions));
-    lines.push(`  \`,`);
-
-    if (config.description) {
-      lines.push(`  description: '${escapeString(config.description)}',`);
-    }
-
-    // Model configuration - use proper AI SDK model instance
-    const modelName = config.model.name;
-    
-    if (provider === 'openai') {
-      lines.push(`  model: openai('${modelName}'),`);
-    } else if (provider === 'anthropic') {
-      lines.push(`  model: anthropic('${modelName}'),`);
-    } else if (provider === 'google') {
-      lines.push(`  model: google('${modelName}'),`);
-    } else {
-      // Fallback to openai if unknown provider
-      lines.push(`  model: openai('gpt-4o-mini'),`);
-    }
-
-    // Tools
-    if (config.tools && config.tools.length > 0) {
-      lines.push(`  tools: {`);
-      config.tools.forEach(toolId => {
-        const varName = toCamelCase(toolId) + 'Tool';
-        lines.push(`    ${varName},`);
-      });
-      lines.push(`  },`);
-    }
-
-    // Workflows
-    if (config.workflows && config.workflows.length > 0) {
-      lines.push(`  workflows: {`);
-      config.workflows.forEach(wfId => {
-        const varName = toCamelCase(wfId) + 'Workflow';
-        lines.push(`    ${varName},`);
-      });
-      lines.push(`  },`);
-    }
-
-    // Memory configuration
+    const lines = [`import { Agent } from '@mastra/core/agent';`];
     if (config.memory && config.memory.type !== 'none') {
-      lines.push(`  memory: {`);
-      lines.push(`    type: '${config.memory.type}',`);
-      if (config.memory.maxMessages) {
-        lines.push(`    maxMessages: ${config.memory.maxMessages},`);
+      lines.push(`import { Memory } from '@mastra/memory';`);
+    }
+    if (config.tools?.length) {
+      lines.push(`import { ${config.tools.map((id) => toCamelCase(id) + 'Tool').join(', ')} } from '../tools';`);
+    }
+    if (config.workflows?.length) {
+      lines.push(
+        `import { ${config.workflows.map((id) => toCamelCase(id) + 'Workflow').join(', ')} } from '../workflows';`,
+      );
+    }
+    lines.push('', `export const ${toCamelCase(config.id)}Agent = new Agent({`);
+    lines.push(`  id: '${escapeString(config.id)}',`, `  name: '${escapeString(config.name)}',`);
+    lines.push(`  instructions: \`${escapeBackticks(config.instructions)}\`,`);
+    if (config.description) lines.push(`  description: '${escapeString(config.description)}',`);
+    // Mastra's model router supports provider/model strings; no provider SDK imports are needed.
+    lines.push(`  model: '${escapeString(config.model.provider.toLowerCase() + '/' + config.model.name)}',`);
+    for (const kind of ['tools', 'workflows'] as const) {
+      if (config[kind]?.length) {
+        const suffix = kind === 'tools' ? 'Tool' : 'Workflow';
+        lines.push(`  ${kind}: {`);
+        config[kind].forEach((id) => lines.push(`    '${escapeString(id)}': ${toCamelCase(id)}${suffix},`));
+        lines.push('  },');
       }
-      lines.push(`  },`);
     }
-
-    // Max retries
-    if (config.maxRetries !== undefined) {
-      lines.push(`  maxRetries: ${config.maxRetries},`);
+    if (config.memory && config.memory.type !== 'none') {
+      if (config.memory.type !== 'buffer')
+        throw new Error(`Memory type "${config.memory.type}" has no automatic current-Mastra mapping`);
+      lines.push(
+        '  // Legacy buffer memory maps to Mastra message history.',
+        '  memory: new Memory({',
+        '    options: {',
+      );
+      lines.push(`      lastMessages: ${config.memory.retrieval?.lastMessages ?? config.memory.maxMessages ?? 10},`);
+      lines.push('      semanticRecall: false,', '      generateTitle: false,', '    },', '  }),');
     }
-
-    // Enable tracing
-    if (config.enableTracing) {
-      lines.push(`  enableTracing: true,`);
+    if (config.maxRetries !== undefined) lines.push(`  maxRetries: ${config.maxRetries},`);
+    const { temperature, topP, maxTokens, stopSequences, frequencyPenalty, presencePenalty } = config.model;
+    const settings = {
+      temperature,
+      topP,
+      maxOutputTokens: maxTokens,
+      stopSequences,
+      frequencyPenalty,
+      presencePenalty,
+    };
+    const modelSettings = Object.fromEntries(Object.entries(settings).filter(([, value]) => value !== undefined));
+    const maxSteps = config.defaultGenerateOptions?.maxSteps ?? config.defaultStreamOptions?.maxSteps;
+    if (Object.keys(modelSettings).length || maxSteps !== undefined) {
+      lines.push('  defaultOptions: {');
+      if (Object.keys(modelSettings).length) lines.push(`    modelSettings: ${JSON.stringify(modelSettings)},`);
+      if (maxSteps !== undefined) lines.push(`    maxSteps: ${maxSteps},`);
+      lines.push('  },');
     }
-
-    lines.push(`});`);
-
+    lines.push('});');
     return lines.join('\n');
-  }
-
-  /**
-   * Generate variable name for agent
-   */
-  private getAgentVarName(id: string): string {
-    return toCamelCase(id) + 'Agent';
   }
 }
